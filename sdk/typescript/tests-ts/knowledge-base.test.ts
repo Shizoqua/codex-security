@@ -642,6 +642,22 @@ describe("scan knowledge bases", () => {
         "<w:r><w:instrText>Visible scope</w:instrText></w:r></w:p>",
       "Visible scope\n",
     ],
+    [
+      "a positioned text box and its compatibility fallback",
+      '<w:p><w:r><w:t>Anchor </w:t></w:r><w:r><mc:AlternateContent xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006">' +
+        '<mc:Choice Requires="wps"><w:drawing><wp:anchor xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing">' +
+        '<wp:positionH relativeFrom="column"><wp:align>center</wp:align></wp:positionH>' +
+        '<wp:positionV relativeFrom="paragraph"><wp:posOffset>12700</wp:posOffset></wp:positionV>' +
+        '<a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData>' +
+        '<wps:wsp xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"><wps:txbx><w:txbxContent>' +
+        "<w:p><w:r><w:t>Admin tokens rotate every 24 hours.</w:t></w:r></w:p>" +
+        "</w:txbxContent></wps:txbx></wps:wsp></a:graphicData></a:graphic></wp:anchor></w:drawing></mc:Choice>" +
+        '<mc:Fallback><w:pict><v:rect xmlns:v="urn:schemas-microsoft-com:vml"><v:textbox><w:txbxContent>' +
+        "<w:p><w:r><w:t>Admin tokens rotate every 24 hours.</w:t></w:r></w:p>" +
+        "</w:txbxContent></v:textbox></v:rect></w:pict></mc:Fallback></mc:AlternateContent></w:r>" +
+        "<w:r><w:t>paragraph.</w:t></w:r></w:p>",
+      "Anchor Admin tokens rotate every 24 hours.\nparagraph.\n",
+    ],
   ])("preserves DOCX text with %s", async (_description, body, expected) => {
     const root = await temporaryDirectory();
     const source = join(root, "field-context.docx");

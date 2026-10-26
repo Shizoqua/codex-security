@@ -324,7 +324,17 @@ function extractDocx(path: string, bytes: Uint8Array): string {
     const parser = new SaxesParser();
     let documentElement = false;
     let deletedDepth = 0;
+    let textDepth = 0;
     let instructionText = false;
+    // Word repeats each modern text box in a markup-compatibility fallback.
+    const skipped = (localName?: string) =>
+      localName === "del" ||
+      localName === "delText" ||
+      localName === "delInstrText" ||
+      localName === "Fallback";
+    // Drawing layout values such as alignment are not document text.
+    const textElement = (localName?: string) =>
+      localName === "t" || localName === "instrText";
     const append = (value: string) => {
       if (deletedDepth > 0) return;
       const field = fields.at(-1);
@@ -341,13 +351,8 @@ function extractDocx(path: string, bytes: Uint8Array): string {
     };
     parser.on("opentag", ({ name, attributes }) => {
       const localName = name.split(":").at(-1);
-      if (
-        localName === "del" ||
-        localName === "delText" ||
-        localName === "delInstrText"
-      ) {
-        deletedDepth++;
-      }
+      if (skipped(localName)) deletedDepth++;
+      if (textElement(localName)) textDepth++;
       if (deletedDepth > 0) return;
       if (localName === "txbxContent") {
         // Text boxes have their own field boundaries.
@@ -380,16 +385,15 @@ function extractDocx(path: string, bytes: Uint8Array): string {
       }
       if (localName === "instrText") instructionText = false;
       if (!isSelfClosing && localName === "p") append("\n");
-      if (
-        localName === "del" ||
-        localName === "delText" ||
-        localName === "delInstrText"
-      ) {
-        deletedDepth--;
-      }
+      if (textElement(localName)) textDepth--;
+      if (skipped(localName)) deletedDepth--;
     });
-    parser.on("text", (value) => append(decodeXml(value)));
-    parser.on("cdata", (value) => append(value.replaceAll("&amp;", "&")));
+    parser.on("text", (value) => {
+      if (textDepth > 0) append(decodeXml(value));
+    });
+    parser.on("cdata", (value) => {
+      if (textDepth > 0) append(value.replaceAll("&amp;", "&"));
+    });
     // Keep the existing entity decoder's handling of unusable references.
     // CDATA is literal text, so only undo this escaping in its handler.
     parser.write(xml.replaceAll("&", "&amp;")).close();
