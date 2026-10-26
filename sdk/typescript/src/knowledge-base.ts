@@ -324,17 +324,16 @@ function extractDocx(path: string, bytes: Uint8Array): string {
     const parser = new SaxesParser();
     let documentElement = false;
     let deletedDepth = 0;
-    let textDepth = 0;
+    let runTextDepth = 0;
     let instructionText = false;
-    // Word repeats each modern text box in a markup-compatibility fallback.
-    const skipped = (localName?: string) =>
-      localName === "del" ||
-      localName === "delText" ||
-      localName === "delInstrText" ||
-      localName === "Fallback";
-    // Drawing layout values such as alignment are not document text.
-    const textElement = (localName?: string) =>
-      localName === "t" || localName === "instrText";
+    // Word repeats modern text boxes in mc:Fallback. Keep that copy only when
+    // the mc:Choice representation produced no readable text.
+    const alternates: { choice: number; text: boolean; skip: boolean }[] = [];
+    const noteText = (value: string) => {
+      if (runTextDepth === 0 || deletedDepth > 0 || !value.trim()) return;
+      for (const alternate of alternates)
+        if (alternate.choice > 0) alternate.text = true;
+    };
     const append = (value: string) => {
       if (deletedDepth > 0) return;
       const field = fields.at(-1);
@@ -351,8 +350,22 @@ function extractDocx(path: string, bytes: Uint8Array): string {
     };
     parser.on("opentag", ({ name, attributes }) => {
       const localName = name.split(":").at(-1);
-      if (skipped(localName)) deletedDepth++;
-      if (textElement(localName)) textDepth++;
+      const alternate = alternates.at(-1);
+      if (localName === "AlternateContent")
+        alternates.push({ choice: 0, text: false, skip: false });
+      else if (localName === "Choice" && alternate) alternate.choice++;
+      else if (localName === "Fallback" && alternate?.text) {
+        alternate.skip = true;
+        deletedDepth++;
+      }
+      if (localName === "t" || localName === "instrText") runTextDepth++;
+      if (
+        localName === "del" ||
+        localName === "delText" ||
+        localName === "delInstrText"
+      ) {
+        deletedDepth++;
+      }
       if (deletedDepth > 0) return;
       if (localName === "txbxContent") {
         // Text boxes have their own field boundaries.
@@ -385,14 +398,28 @@ function extractDocx(path: string, bytes: Uint8Array): string {
       }
       if (localName === "instrText") instructionText = false;
       if (!isSelfClosing && localName === "p") append("\n");
-      if (textElement(localName)) textDepth--;
-      if (skipped(localName)) deletedDepth--;
+      if (
+        localName === "del" ||
+        localName === "delText" ||
+        localName === "delInstrText"
+      ) {
+        deletedDepth--;
+      }
+      if (localName === "t" || localName === "instrText") runTextDepth--;
+      const alternate = alternates.at(-1);
+      if (localName === "Choice" && alternate) alternate.choice--;
+      else if (localName === "Fallback" && alternate?.skip) {
+        alternate.skip = false;
+        deletedDepth--;
+      } else if (localName === "AlternateContent") alternates.pop();
     });
     parser.on("text", (value) => {
-      if (textDepth > 0) append(decodeXml(value));
+      noteText(value);
+      append(decodeXml(value));
     });
     parser.on("cdata", (value) => {
-      if (textDepth > 0) append(value.replaceAll("&amp;", "&"));
+      noteText(value);
+      append(value.replaceAll("&amp;", "&"));
     });
     // Keep the existing entity decoder's handling of unusable references.
     // CDATA is literal text, so only undo this escaping in its handler.
